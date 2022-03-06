@@ -1,10 +1,28 @@
 #define USE_ARDUINO_INTERRUPTS true
 #include <PulseSensorPlayground.h>
-//#include <ArduinoQueue.h>
+#include "SevSegShift.h"
 
+#define SHIFT_PIN_DS   8 /* Data input PIN */
+#define SHIFT_PIN_STCP 7 /* Shift Register Storage PIN */
+#define SHIFT_PIN_SHCP 6 /* Shift Register Shift PIN */
+
+//Instantiate a seven segment controller object (with Shift Register functionality)
+SevSegShift sss(
+                  SHIFT_PIN_DS, 
+                  SHIFT_PIN_SHCP, 
+                  SHIFT_PIN_STCP, 
+                  1, /* number of shift registers there is only 1 Shiftregister 
+                        used for all Segments (digits are on Controller)
+                        default value = 2 (see SevSegShift example)
+                        */
+                  true /* Digits are connected to Arduino directly 
+                          default value = false (see SevSegShift example)
+                        */
+                );
+                
 const int PULSE_INPUT = A0;   // ANALOG PIN 0
 const int PULSE_BLINK = 13;     // LED by PIN 13
-int THRESHOLD = 550;    // Threshold for beat count
+int THRESHOLD = 700;    // Threshold for beat count
 
 // STATISTIC VARIABLES
 const int intervalRecSize = 10;
@@ -35,6 +53,8 @@ const int RED_PIN = 9;
 const int GREEN_PIN = 10;
 const int BLUE_PIN = 11;
 
+int displayBPM = 0; // bpm to display (not to calculate other statistics)
+
 PulseSensorPlayground pulseSensor;
 
 void setup() {
@@ -58,16 +78,32 @@ void setup() {
   //unsigned long prevTimeMillis = millis();
   //std::list<unsigned long> intervals;
 
+  // Setup LED segment display
+  byte numDigits = 4;
+  byte digitPins[] = {5, 4, 3, 2}; // These are the PINS of the ** Arduino **
+  byte segmentPins[] = {0, 2, 4, 6, 7, 1, 3, 5}; // these are the PINs of the ** Shift register **
+  bool resistorsOnSegments = false; // 'false' means resistors are on digit pins
+  byte hardwareConfig = COMMON_CATHODE; // See README.md for options
+  bool updateWithDelays = false; // Default 'false' is Recommended
+  bool leadingZeros = false; // Use 'true' if you'd like to keep the leading zeros
+  bool disableDecPoint = false; // Use 'true' if your decimal point doesn't exist or isn't connected. Then, you only need to specify 7 segmentPins[]
+
+  sss.begin(hardwareConfig, numDigits, digitPins, segmentPins, resistorsOnSegments,
+  updateWithDelays, leadingZeros, disableDecPoint);
+  sss.setBrightness(100);
 }
 
 void loop() {
 
   int myBPM = pulseSensor.getBeatsPerMinute();
-  if (pulseSensor.sawStartOfBeat()) {
-    statistic(myBPM);
-    levelOfActivity(myBPM);
-  }
-  delay(10);
+    if (pulseSensor.sawStartOfBeat()) {
+      statistic(myBPM);
+      levelOfActivity(myBPM);
+      displayBPM = myBPM;
+    }
+
+  sss.setNumber(displayBPM);
+  sss.refreshDisplay();
 }
 
 void statistic(int myBPM)
@@ -133,7 +169,6 @@ void statistic(int myBPM)
 
 void levelOfActivity(int myBPM)
 {
-  if (millis() % 10 == 1) { return; }
   if (myBPM < tooLow) {
     Serial.println("No measured heart rate.");
     rgb(255, 255, 255); // white
